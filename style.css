@@ -1,0 +1,623 @@
+html, body {
+            height: 100%;
+        }
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000;
+        }
+        #blocker, #nicknameScreen {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+            overflow: hidden;
+            background:
+                radial-gradient(ellipse at center, rgba(163,68,31,0.35) 0%, rgba(5,2,1,0.96) 72%),
+                linear-gradient(180deg, #150502 0%, #05130170 100%);
+            background-color: #0a0503;
+        }
+        /* Campo de estrelas cintilantes atrás do menu (puro CSS) */
+        #blocker::before, #nicknameScreen::before {
+            content: ''; position: absolute; inset: 0; pointer-events: none;
+            background-image:
+                radial-gradient(1.5px 1.5px at 12% 18%, #fff, transparent),
+                radial-gradient(1px 1px at 27% 62%, #ffd9b3, transparent),
+                radial-gradient(1.5px 1.5px at 41% 27%, #fff, transparent),
+                radial-gradient(1px 1px at 58% 71%, #fff, transparent),
+                radial-gradient(1.5px 1.5px at 68% 15%, #ffd9b3, transparent),
+                radial-gradient(1px 1px at 77% 45%, #fff, transparent),
+                radial-gradient(1.5px 1.5px at 85% 82%, #fff, transparent),
+                radial-gradient(1px 1px at 92% 30%, #ffd9b3, transparent),
+                radial-gradient(1.5px 1.5px at 6% 85%, #fff, transparent),
+                radial-gradient(1px 1px at 35% 90%, #fff, transparent);
+            background-repeat: repeat;
+            animation: twinkle 4s ease-in-out infinite alternate;
+        }
+        @keyframes twinkle { from { opacity: 0.35; } to { opacity: 1; } }
+        /* Poeira flutuante lenta, sobe e deriva de leve pro lado */
+        .dustMote {
+            position: absolute; bottom: -10px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,170,102,0.85) 0%, rgba(255,170,102,0) 70%);
+            pointer-events: none; animation: driftUp linear infinite;
+        }
+        @keyframes driftUp {
+            0% { transform: translate(0, 0); opacity: 0; }
+            10% { opacity: 0.8; }
+            90% { opacity: 0.5; }
+            100% { transform: translate(30px, -110vh); opacity: 0; }
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(22px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes titleGlow {
+            0%, 100% { text-shadow: 0 0 18px rgba(255, 170, 102, 0.6), 0 0 40px rgba(255, 90, 40, 0.25); }
+            50% { text-shadow: 0 0 28px rgba(255, 190, 130, 0.9), 0 0 60px rgba(255, 90, 40, 0.45); }
+        }
+        @keyframes playPulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(255, 120, 60, 0.55), inset 0 0 12px rgba(255,255,255,0.08); }
+            50% { box-shadow: 0 0 38px rgba(255, 150, 80, 0.85), inset 0 0 16px rgba(255,255,255,0.15); }
+        }
+        #instructions {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 24px;
+            animation: fadeInUp 0.7s ease-out;
+        }
+        #instructions .planetIcon {
+            font-size: 40px;
+            display: block;
+            margin-bottom: 4px;
+            filter: drop-shadow(0 0 14px rgba(255, 110, 60, 0.7));
+            animation: float 4.5s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-8px) rotate(4deg); }
+        }
+        h1 {
+            color: #ffaa66;
+            margin: 0 0 6px;
+            font-size: 44px;
+            letter-spacing: 1.5px;
+            animation: titleGlow 3s ease-in-out infinite;
+        }
+        #instructions .subtitle {
+            font-size: 15px;
+            color: #ffcf9e;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin: 0 0 26px;
+            opacity: 0.8;
+        }
+        #playBtn {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin: 6px 0 30px;
+            padding: 16px 46px;
+            font-size: 20px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            color: #1a0a04;
+            background: linear-gradient(180deg, #ffc084 0%, #ff9a4d 55%, #ff7a33 100%);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            animation: playPulse 2.2s ease-in-out infinite;
+            transition: transform 0.15s ease, filter 0.15s ease;
+        }
+        #playBtn:hover { transform: translateY(-2px) scale(1.035); filter: brightness(1.08); }
+        #playBtn:active { transform: translateY(0) scale(0.97); }
+        #playBtn .playIcon { font-size: 16px; }
+        #controlsBtn {
+            display: flex;
+            width: fit-content;
+            align-items: center;
+            gap: 8px;
+            margin: 0 auto 26px;
+            padding: 10px 28px;
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            color: #ffcf9e;
+            background: rgba(255, 170, 102, 0.08);
+            border: 1px solid rgba(255, 170, 102, 0.4);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.15s ease, transform 0.12s ease;
+        }
+        #controlsBtn:hover { background: rgba(255, 170, 102, 0.18); transform: translateY(-1px); }
+        #controlsBtn:active { transform: translateY(0); }
+        #controlsScreen {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 14;
+            background: rgba(5, 2, 1, 0.9);
+        }
+        #controlsBox {
+            text-align: center;
+            padding: 40px 55px;
+            max-width: 480px;
+            border: 1px solid rgba(255, 170, 102, 0.35);
+            border-radius: 14px;
+            background: rgba(20, 8, 4, 0.75);
+            box-shadow: 0 0 60px rgba(255, 120, 60, 0.15), inset 0 0 40px rgba(0,0,0,0.4);
+            animation: fadeInUp 0.4s ease-out;
+        }
+        #controlsBox h2 {
+            color: #ffaa66;
+            margin: 0 0 4px;
+            font-size: 26px;
+            letter-spacing: 1px;
+            text-shadow: 0 0 14px rgba(255, 170, 102, 0.6);
+        }
+        .controlsPanel {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            margin-top: 4px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 170, 102, 0.2);
+        }
+        .controlHint { display: flex; align-items: center; gap: 7px; font-size: 13px; color: #ddd; }
+        .controlHint kbd {
+            display: inline-block; min-width: 20px; text-align: center;
+            padding: 4px 8px; font-size: 12px; font-weight: bold; color: #ffe6c9;
+            background: rgba(255, 170, 102, 0.14); border: 1px solid rgba(255, 170, 102, 0.4);
+            border-radius: 5px; box-shadow: 0 2px 0 rgba(255, 170, 102, 0.25);
+        }
+        #instructions .hintNote {
+            font-size: 13px; color: #ffaa66; margin-top: 16px; opacity: 0.85;
+        }
+        p {
+            font-size: 18px;
+            color: #dddddd;
+        }
+        #nicknameScreen {
+            display: none;
+        }
+        #nicknameBox {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 40px 60px;
+            border: 1px solid rgba(255, 170, 102, 0.35);
+            border-radius: 14px;
+            background: rgba(20, 8, 4, 0.55);
+            box-shadow: 0 0 60px rgba(255, 120, 60, 0.12), inset 0 0 40px rgba(0,0,0,0.4);
+            animation: fadeInUp 0.5s ease-out;
+        }
+        #nicknameBox label {
+            display: block;
+            font-size: 20px;
+            color: #fffbb5;
+            font-weight: bold;
+            margin-bottom: 18px;
+            letter-spacing: 0.5px;
+        }
+        #nicknameInput {
+            width: 320px;
+            max-width: 60vw;
+            padding: 12px 16px;
+            font-size: 18px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 170, 102, 0.5);
+            background: rgba(0, 0, 0, 0.45);
+            color: #fff;
+            outline: none;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+        #nicknameInput:focus {
+            border-color: #ffaa66;
+            box-shadow: 0 0 12px rgba(255, 170, 102, 0.5);
+        }
+        #nicknameOk {
+            display: block;
+            margin: 24px auto 0;
+            padding: 10px 36px;
+            font-size: 17px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            color: #150502;
+            background: #ffaa66;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 0 18px rgba(255, 170, 102, 0.5);
+            transition: transform 0.12s ease, background 0.12s ease;
+        }
+        #nicknameOk:hover {
+            background: #ffc084;
+            transform: translateY(-1px);
+        }
+        #playerHud {
+            position: fixed;
+            top: 18px;
+            left: 22px;
+            z-index: 6;
+            color: #fffbb5;
+            font-weight: bold;
+            font-size: 16px;
+            letter-spacing: 0.3px;
+            text-shadow: 0 0 8px rgba(255, 170, 102, 0.7);
+            background: rgba(10, 10, 10, 0.5);
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 251, 181, 0.3);
+            display: none;
+        }
+        #coordHud {
+            position: fixed;
+            top: 66px;
+            left: 22px;
+            z-index: 6;
+            color: #9fe8d8;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 13px;
+            letter-spacing: 0.5px;
+            text-shadow: 0 0 6px rgba(110, 255, 210, 0.6);
+            background: rgba(10, 10, 10, 0.5);
+            padding: 6px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(110, 255, 210, 0.3);
+            display: none;
+        }
+        #interactPrompt {
+            position: absolute;
+            bottom: 12%;
+            left: 50%;
+            transform: translateX(-50%) translateY(6px);
+            background-color: rgba(10, 10, 10, 0.72);
+            color: #fffbb5;
+            padding: 10px 22px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 251, 181, 0.4);
+            font-size: 17px;
+            font-weight: bold;
+            letter-spacing: 0.3px;
+            text-shadow: 0 0 6px rgba(255, 170, 102, 0.6);
+            opacity: 0;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            pointer-events: none;
+            z-index: 5;
+            white-space: nowrap;
+        }
+        #interactPrompt.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        #sleepFade {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: #000;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 8;
+            transition: opacity 0.35s ease;
+        }
+        #sleepFade.active { opacity: 1; }
+        #flagNameScreen {
+            display: none;
+        }
+        #flagNameBox {
+            text-align: center;
+            padding: 40px 60px;
+            border: 1px solid rgba(255, 170, 102, 0.35);
+            border-radius: 14px;
+            background: rgba(20, 8, 4, 0.55);
+            box-shadow: 0 0 60px rgba(255, 120, 60, 0.12), inset 0 0 40px rgba(0,0,0,0.4);
+        }
+        #flagNameBox label {
+            display: block;
+            font-size: 20px;
+            color: #fffbb5;
+            font-weight: bold;
+            margin-bottom: 18px;
+            letter-spacing: 0.5px;
+        }
+        #flagNameInput {
+            width: 320px;
+            max-width: 60vw;
+            padding: 12px 16px;
+            font-size: 18px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 170, 102, 0.5);
+            background: rgba(0, 0, 0, 0.45);
+            color: #fff;
+            outline: none;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+        #flagNameInput:focus {
+            border-color: #ffaa66;
+            box-shadow: 0 0 12px rgba(255, 170, 102, 0.5);
+        }
+        #flagNameOk {
+            display: block;
+            margin: 24px auto 0;
+            padding: 10px 36px;
+            font-size: 17px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            color: #150502;
+            background: #ffaa66;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 0 18px rgba(255, 170, 102, 0.5);
+            transition: transform 0.12s ease, background 0.12s ease;
+        }
+        #flagNameOk:hover {
+            background: #ffc084;
+            transform: translateY(-1px);
+        }
+        #flagNameHint {
+            display: block;
+            margin-top: 14px;
+            font-size: 12px;
+            color: #cbb8a8;
+            letter-spacing: 0.3px;
+        }
+        #pauseMenu {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 12;
+            background: rgba(5, 2, 1, 0.78);
+        }
+        #pauseBox {
+            text-align: center;
+            padding: 36px 50px;
+            min-width: 300px;
+            border: 1px solid rgba(255, 170, 102, 0.35);
+            border-radius: 14px;
+            background: rgba(20, 8, 4, 0.75);
+            box-shadow: 0 0 60px rgba(255, 120, 60, 0.15), inset 0 0 40px rgba(0,0,0,0.4);
+        }
+        #pauseBox h2 {
+            color: #ffaa66;
+            margin: 0 0 24px 0;
+            font-size: 28px;
+            letter-spacing: 1px;
+            text-shadow: 0 0 14px rgba(255, 170, 102, 0.6);
+        }
+        .menuBtn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            box-sizing: border-box;
+            margin: 8px 0;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            letter-spacing: 0.3px;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 170, 102, 0.4);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s ease, transform 0.1s ease;
+        }
+        .menuBtn:hover { background: rgba(255, 170, 102, 0.18); transform: translateY(-1px); }
+        #menuResume { background: #ffaa66; color: #150502; }
+        #menuResume:hover { background: #ffc084; }
+        #menuRestart:hover { background: rgba(255, 90, 60, 0.25); border-color: rgba(255,90,60,0.6); }
+
+        .settingRow {
+            text-align: left;
+            margin: 14px 0 4px;
+        }
+        .settingRow label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #ffd9b0;
+            font-weight: bold;
+            letter-spacing: 0.3px;
+            margin-bottom: 4px;
+        }
+        .settingRow input[type="range"] {
+            width: 100%;
+            accent-color: #ffaa66;
+            cursor: pointer;
+        }
+        #pauseDivider {
+            border: none;
+            border-top: 1px solid rgba(255,170,102,0.25);
+            margin: 16px 0 6px;
+        }
+
+        #minimap {
+            position: fixed;
+            bottom: 22px;
+            right: 22px;
+            z-index: 6;
+            display: none;
+            width: 170px;
+            height: 170px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 251, 181, 0.4);
+            background: radial-gradient(circle, rgba(20,10,6,0.55) 0%, rgba(5,2,1,0.75) 100%);
+            box-shadow: 0 0 24px rgba(0,0,0,0.55), inset 0 0 22px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+        #minimapCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        #creditsScreen {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 13;
+            background: rgba(5, 2, 1, 0.9);
+        }
+        #creditsBox {
+            text-align: center;
+            padding: 40px 55px;
+            max-width: 500px;
+            border: 1px solid rgba(255, 170, 102, 0.35);
+            border-radius: 14px;
+            background: rgba(20, 8, 4, 0.75);
+            box-shadow: 0 0 60px rgba(255, 120, 60, 0.15), inset 0 0 40px rgba(0,0,0,0.4);
+        }
+        #creditsBox p { font-size: 15px; line-height: 1.6; color: #e6c9b5; }
+        #creditsBox h3 { color: #66ffd6; margin: 18px 0 4px; font-size: 14px; letter-spacing: 1px; }
+
+        /* ===================== CUTSCENE DE ABERTURA ===================== */
+        #cutscene {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            z-index: 15;
+            display: none;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        #cutscene.active { display: block; }
+
+        #cutsceneBarTop, #cutsceneBarBottom {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 13vh;
+            background: #000;
+            transition: transform 1s cubic-bezier(.22, .68, .32, 1);
+        }
+        #cutsceneBarTop { top: 0; transform: translateY(-100%); }
+        #cutsceneBarBottom { bottom: 0; transform: translateY(100%); }
+        #cutscene.active #cutsceneBarTop { transform: translateY(0); }
+        #cutscene.active #cutsceneBarBottom { transform: translateY(0); }
+
+        #cutsceneVignette {
+            position: absolute; inset: 0;
+            background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(5,2,1,0.6) 100%);
+            opacity: 0;
+            transition: opacity 1.4s ease;
+        }
+        #cutscene.active #cutsceneVignette { opacity: 1; }
+
+        #cutsceneTextWrap {
+            position: absolute;
+            left: 0; right: 0;
+            bottom: 17vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 0 9vw;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        #cutsceneHeader {
+            position: relative;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: #66ffd6;
+            text-shadow: 0 0 10px rgba(110, 255, 210, 0.7);
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+        }
+        #cutsceneHeader::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 50%;
+            transform: translateX(-50%);
+            width: 46px; height: 2px;
+            background: rgba(110, 255, 210, 0.6);
+        }
+        #cutsceneCaption {
+            max-width: 720px;
+            font-size: 19px;
+            line-height: 1.65;
+            color: #ffe9d2;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.9);
+        }
+        #cutsceneSkipHint {
+            position: absolute;
+            bottom: calc(13vh + 18px);
+            right: 26px;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+            color: rgba(255, 217, 176, 0.75);
+            opacity: 0;
+            transition: opacity 0.6s ease 0.7s;
+        }
+        #cutscene.active #cutsceneSkipHint {
+            opacity: 1;
+            animation: cutsceneSkipBlink 2.4s ease-in-out infinite;
+        }
+        @keyframes cutsceneSkipBlink { 0%, 100% { opacity: 0.75; } 50% { opacity: 0.3; } }
+
+        /* Botão de tela cheia — fica por cima de qualquer tela (menu, jogo, pausa etc.) */
+        #fullscreenBtn {
+            position: fixed;
+            top: 18px;
+            right: 22px;
+            z-index: 20;
+            width: 42px;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            line-height: 1;
+            color: #ffcf9e;
+            background: rgba(10, 10, 10, 0.5);
+            border: 1px solid rgba(255, 170, 102, 0.4);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s ease, transform 0.12s ease, border-color 0.15s ease;
+        }
+        #fullscreenBtn:hover {
+            background: rgba(255, 170, 102, 0.18);
+            border-color: rgba(255, 170, 102, 0.7);
+            transform: translateY(-1px);
+        }
+        #fullscreenBtn:active { transform: translateY(0); }
+        #fullscreenBtn.is-active {
+            color: #150502;
+            background: #ffaa66;
+            border-color: #ffaa66;
+        }

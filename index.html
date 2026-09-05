@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Saga - Exploração em Marte</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <button id="fullscreenBtn" title="Tela cheia" aria-label="Alternar tela cheia">⛶</button>
+
+    <div id="interactPrompt">Pressione [ E ] para abrir a porta</div>
+    <div id="playerHud"></div>
+    <div id="coordHud"> X: 0   Z: 0</div>
+    <div id="minimap"><canvas id="minimapCanvas" width="220" height="220"></canvas></div>
+    <div id="sleepFade"></div>
+
+    <div id="cutscene">
+        <div id="cutsceneBarTop"></div>
+        <div id="cutsceneBarBottom"></div>
+        <div id="cutsceneVignette"></div>
+        <div id="cutsceneTextWrap">
+            <div id="cutsceneHeader"></div>
+            <div id="cutsceneCaption"></div>
+        </div>
+        <div id="cutsceneSkipHint">Pressione [ ESC ] para pular a transmissão</div>
+    </div>
+
+    <div id="flagNameScreen">
+        <div id="flagNameBox">
+            <label for="flagNameInput">Nomeie sua bandeira:</label>
+            <input type="text" id="flagNameInput" maxlength="24" placeholder="Ex: Vale das Dunas" autocomplete="off">
+            <button id="flagNameOk">🚩 Plantar</button>
+            <span id="flagNameHint">[ Esc ] para cancelar</span>
+        </div>
+    </div>
+
+    <div id="pauseMenu">
+        <div id="pauseBox">
+            <h2>Jogo Pausado</h2>
+            <button class="menuBtn" id="menuResume">▶ Continuar</button>
+            <button class="menuBtn" id="menuSound">🔊 Som: Ligado</button>
+
+            <hr id="pauseDivider">
+
+            <div class="settingRow">
+                <label><span>🖱️ Sensibilidade do mouse</span><span id="sensValue">1.0</span></label>
+                <input type="range" id="sensSlider" min="0.3" max="2.5" step="0.1" value="1.0">
+            </div>
+            <div class="settingRow">
+                <label><span>🎵 Volume da música</span><span id="musicVolValue">50%</span></label>
+                <input type="range" id="musicVolSlider" min="0" max="100" step="5" value="50">
+            </div>
+            <div class="settingRow">
+                <label><span>🌬️ Volume dos efeitos</span><span id="sfxVolValue">100%</span></label>
+                <input type="range" id="sfxVolSlider" min="0" max="100" step="5" value="100">
+            </div>
+
+            <hr id="pauseDivider">
+
+            <button class="menuBtn" id="menuCredits">ℹ️ Sobre o Jogo</button>
+            <button class="menuBtn" id="menuRestart">⟲ Reiniciar Jogo</button>
+            <button class="menuBtn" id="menuQuit">🚪 Sair para o Início</button>
+        </div>
+    </div>
+
+    <div id="creditsScreen">
+        <div id="creditsBox">
+            <h1 style="font-size:28px;">Pixel Saga: Exploração em Marte</h1>
+            <p>Você é um astronauta explorando a superfície de Marte e cuidando da sua base de operações.</p>
+            <h3>SOBRE A HISTÓRIA</h3>
+            <p>Sua missão é explorar o terreno marciano — dunas, crateras e rochedos — e retornar sempre em segurança à sua estação, que conta com um supercomputador de operações e um sistema automático de porta.</p>
+            <h3>CONTROLES</h3>
+            <p>W A S D para andar &nbsp;|&nbsp; Mouse para olhar &nbsp;|&nbsp; F Lanterna &nbsp;|&nbsp; E Porta &nbsp;|&nbsp; Esc Menu</p>
+            <button class="menuBtn" id="creditsBack" style="margin-top:20px;">← Voltar</button>
+        </div>
+    </div>
+
+    <div id="blocker">
+        <div id="instructions">
+            <span class="planetIcon">🔴</span>
+            <h1>Pixel Saga</h1>
+            <p class="subtitle">Exploração em Marte</p>
+            <button id="playBtn"><span class="playIcon">▶</span> JOGAR</button>
+            <button id="controlsBtn">Controles</button>
+            <p class="hintNote">Explore o vasto planeta vermelho Marte!</p>
+        </div>
+    </div>
+
+    <div id="controlsScreen">
+        <div id="controlsBox">
+            <h2>CONTROLES</h2>
+            <div class="controlsPanel">
+                <span class="controlHint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Andar</span>
+                <span class="controlHint">🖱️ Olhar</span>
+                <span class="controlHint"><kbd>F</kbd> Lanterna</span>
+                <span class="controlHint"><kbd>E</kbd> Interagir</span>
+                <span class="controlHint"><kbd>G</kbd> Bandeira</span>
+                <span class="controlHint"><kbd>L</kbd> Faróis do jipe</span>
+                <span class="controlHint"><kbd>Esc</kbd> Menu</span>
+            </div>
+            <button class="menuBtn" id="controlsBack" style="margin-top:24px;">← Voltar</button>
+        </div>
+    </div>
+
+    <div id="nicknameScreen">
+        <div id="nicknameBox">
+            <label for="nicknameInput">Adicione seu nickname:</label>
+            <input type="text" id="nicknameInput" maxlength="18" placeholder="Ex: Astro_Marcos" autocomplete="off">
+            <button id="nicknameOk">OK</button>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
