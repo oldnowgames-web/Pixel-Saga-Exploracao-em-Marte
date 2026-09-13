@@ -1300,14 +1300,16 @@
             flagNameInput.value = `Bandeira ${flags.length + 1}`;
             flagNameScreen.style.display = 'flex';
             interactPromptEl.classList.remove('visible');
-            if (controls.isLocked) controls.unlock();
+            if (isControlsLocked()) requestUnlock();
+            updateMobileControlsVisibility();
             setTimeout(() => { flagNameInput.focus(); flagNameInput.select(); }, 50);
         }
         function finishFlagNaming() {
             namingFlagPending = null;
             isNamingFlag = false;
             flagNameScreen.style.display = 'none';
-            if (gameStarted && !isPaused) controls.lock();
+            if (gameStarted && !isPaused) requestLock();
+            updateMobileControlsVisibility();
         }
         function confirmFlagName() {
             const typed = flagNameInput.value.trim();
@@ -1345,6 +1347,7 @@
             camera.quaternion.setFromEuler(jeepEnterEuler);
             interactPromptEl.classList.remove('visible');
             playJeepStartSound();
+            document.body.classList.add('driving');
         }
         function exitJeep() {
             isDriving = false; jeepSpeed = 0;
@@ -1354,6 +1357,7 @@
             playJeepStopSound();
             if (jeepEngineGain) jeepEngineGain.gain.value = 0;
             if (jeepRoadGain) jeepRoadGain.gain.value = 0;
+            document.body.classList.remove('driving');
         }
         function updateJeepDriving(delta) {
             const throttle = (moveForward ? 1 : 0) - (moveBackward ? 1 : 0);
@@ -1439,9 +1443,11 @@
                 const markerRJ = (clampedDistJ / minimapRange) * (R - 14);
                 const jx = cx + Math.sin(diffRadJ) * markerRJ;
                 const jy = cy - Math.cos(diffRadJ) * markerRJ;
-                minimapCtx.font = '15px sans-serif';
                 minimapCtx.fillStyle = '#8fd3ff';
-                minimapCtx.fillText('🚙', jx, jy);
+                minimapCtx.beginPath(); minimapCtx.arc(jx, jy, 3, 0, Math.PI * 2); minimapCtx.fill();
+                minimapCtx.font = 'bold 9px Segoe UI, sans-serif';
+                minimapCtx.textAlign = 'center'; minimapCtx.textBaseline = 'middle';
+                minimapCtx.fillText('Jipe', jx, jy + 10);
             }
 
             // Marcadores dos PONTOS TURÍSTICOS DE MARTE — ficam longe da base, então em vez de sumir
@@ -1454,13 +1460,13 @@
                     const rL = (clampedDistL / minimapRange) * (R - 14);
                     const lx = cx + Math.sin(diffRadL) * rL;
                     const ly = cy - Math.cos(diffRadL) * rL;
-                    minimapCtx.font = '14px sans-serif';
                     minimapCtx.fillStyle = '#ff9d5c';
-                    minimapCtx.fillText(lm.icon, lx, ly - 6);
-                    minimapCtx.font = '8px Segoe UI, sans-serif';
+                    minimapCtx.beginPath(); minimapCtx.arc(lx, ly, 3, 0, Math.PI * 2); minimapCtx.fill();
+                    minimapCtx.font = 'bold 8px Segoe UI, sans-serif';
+                    minimapCtx.textAlign = 'center'; minimapCtx.textBaseline = 'middle';
                     minimapCtx.fillStyle = '#ffd9b3';
                     const labelL = lm.name.length > 12 ? lm.name.slice(0, 11) + '…' : lm.name;
-                    minimapCtx.fillText(labelL, lx, ly + 7);
+                    minimapCtx.fillText(labelL, lx, ly + 10);
                 });
             }
 
@@ -1472,13 +1478,13 @@
                     const r = (f.dist / minimapRange) * (R - 14);
                     const fx = cx + Math.sin(diffRadF) * r;
                     const fy = cy - Math.cos(diffRadF) * r;
-                    minimapCtx.font = '13px sans-serif';
                     minimapCtx.fillStyle = '#ffd23d';
-                    minimapCtx.fillText('🚩', fx, fy - 6);
-                    minimapCtx.font = '9px Segoe UI, sans-serif';
+                    minimapCtx.beginPath(); minimapCtx.arc(fx, fy, 3, 0, Math.PI * 2); minimapCtx.fill();
+                    minimapCtx.font = 'bold 9px Segoe UI, sans-serif';
+                    minimapCtx.textAlign = 'center'; minimapCtx.textBaseline = 'middle';
                     minimapCtx.fillStyle = '#fffbb5';
                     const label = f.name.length > 10 ? f.name.slice(0, 9) + '…' : f.name;
-                    minimapCtx.fillText(label, fx, fy + 8);
+                    minimapCtx.fillText(label, fx, fy + 10);
                 });
             }
 
@@ -1501,13 +1507,31 @@
         const playerHud = document.getElementById('playerHud');
         const coordHud = document.getElementById('coordHud');
 
+        // --- Suporte a celular: em telas de toque não existe Pointer Lock de verdade
+        // (arrastar o dedo não dispara mousemove com movementX/Y), então simulamos o "travamento"
+        // do controle com uma flag própria e giramos a câmera manualmente a partir do toque
+        // (ver applyMobileLook mais abaixo). requestLock/requestUnlock/isControlsLocked substituem
+        // TODAS as chamadas diretas a controls.lock()/unlock()/isLocked no resto do arquivo.
+        const isMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+        if (isMobile) document.body.classList.add('is-mobile');
+        let virtualLocked = false;
+        function isControlsLocked() { return isMobile ? virtualLocked : controls.isLocked; }
+        function requestLock() {
+            if (isMobile) { virtualLocked = true; onControlsLocked(); }
+            else controls.lock();
+        }
+        function requestUnlock() {
+            if (isMobile) { virtualLocked = false; onControlsUnlocked(); }
+            else if (controls.isLocked) controls.unlock();
+        }
+
         let gameStarted = false;
         let playerNickname = '';
 
         // 1) Tela de start -> some, e abre a tela de nickname (sem travar o mouse ainda)
         //    Se o jogo já começou (o jogador só apertou Esc / perdeu o foco), volta direto sem pedir nickname de novo.
         document.getElementById('playBtn').addEventListener('click', () => {
-            if (gameStarted) { controls.lock(); return; }
+            if (gameStarted) { requestLock(); updateMobileControlsVisibility(); return; }
             blocker.style.display = 'none';
             nicknameScreen.style.display = 'flex';
             nicknameInput.value = '';
@@ -1532,7 +1556,7 @@
             playerHud.textContent = '🧑‍🚀 ' + playerNickname;
             nicknameScreen.style.display = 'none';
             gameStarted = true;
-            controls.lock();
+            requestLock();
             initAudio();
             // O HUD (nickname, coordenadas, minimapa) só aparece quando a cutscene terminar —
             // startCutscene() mantém o jogador travado (sem mover/interagir) durante a transmissão.
@@ -1544,16 +1568,19 @@
             if (e.code === 'Enter') confirmNickname();
         });
 
-        controls.addEventListener('lock', () => blocker.style.display = 'none');
-        controls.addEventListener('unlock', () => {
+        function onControlsLocked() { blocker.style.display = 'none'; updateMobileControlsVisibility(); }
+        function onControlsUnlocked() {
             interactPromptEl.classList.remove('visible');
+            updateMobileControlsVisibility();
             // Durante a cutscene de abertura o jogo não deve pausar (ela roda sem o pointer lock preso)
             if (cutsceneActive) return;
             // Não abre o menu de pausa se o motivo foi abrir a tela de nomear bandeira
             if (isNamingFlag) return;
             // Se o jogo já começou, abrir o menu de pausa (em vez da tela de início)
             if (gameStarted) openPauseMenu();
-        });
+        }
+        controls.addEventListener('lock', onControlsLocked);
+        controls.addEventListener('unlock', onControlsUnlocked);
 
         // --- MENU DE PAUSA ---
         const pauseMenu = document.getElementById('pauseMenu');
@@ -1579,14 +1606,16 @@
             pauseMenu.style.display = 'flex';
             interactPromptEl.classList.remove('visible');
             minimap.style.display = 'none';
-            if (controls.isLocked) controls.unlock();
+            if (isControlsLocked()) requestUnlock();
+            updateMobileControlsVisibility();
         }
         function closePauseMenu() {
             isPaused = false;
             pauseMenu.style.display = 'none';
             creditsScreen.style.display = 'none';
             minimap.style.display = 'block';
-            controls.lock();
+            requestLock();
+            updateMobileControlsVisibility();
         }
         menuResumeBtn.addEventListener('click', closePauseMenu);
         menuSoundBtn.addEventListener('click', () => {
@@ -1784,6 +1813,7 @@
             playerHud.style.display = 'block';
             coordHud.style.display = 'block';
             minimap.style.display = 'block';
+            updateMobileControlsVisibility();
         }
 
         function skipCutscene() {
@@ -1829,10 +1859,13 @@
 
         // Fallback: o navegador nem sempre dispara o evento de "unlock" a tempo (cooldown do Pointer Lock),
         // então também escutamos o ESC diretamente, garantindo que o menu sempre abra.
-        document.addEventListener('keydown', (e) => {
-            if (e.code !== 'Escape') return;
+        function doPauseOrSkip() {
             if (cutsceneActive) { skipCutscene(); return; }
             if (gameStarted && !isPaused) openPauseMenu();
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.code !== 'Escape') return;
+            doPauseOrSkip();
         });
 
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, flashlightOn = false;
@@ -1840,32 +1873,50 @@
         let currentInteraction = null; // 'door' | 'bed' | 'jeep' | null — atualizado a cada frame em animate()
         let isNightNow = false;
 
+        // --- Ações de jogo, extraídas em funções pra serem chamadas tanto pelo teclado (desktop)
+        // quanto pelos botões virtuais na tela (celular). ---
+        function canAcceptGameInput() {
+            return gameStarted && !isPaused && !isNamingFlag && !cutsceneActive;
+        }
+        function doToggleFlashlight() {
+            if (!canAcceptGameInput()) return;
+            flashlightOn = !flashlightOn; flashlight.visible = flashlightOn;
+        }
+        function doToggleHeadlights() {
+            if (!canAcceptGameInput() || !isDriving) return;
+            setJeepHeadlights(!jeepHeadlightsOn);
+        }
+        function doInteract() {
+            if (!canAcceptGameInput()) return;
+            if (isDriving) {
+                exitJeep();
+            } else if (currentInteraction === 'door') { // Abrir/Fechar porta da base!
+                isDoorOpen = !isDoorOpen;
+                doorTargetY = isDoorOpen ? doorOpenY : doorClosedY; // Sobe para liberar a passagem
+                playDoorSound(isDoorOpen);
+            } else if (currentInteraction === 'bed') {
+                if (isNightNow) sleepUntilMorning();
+            } else if (currentInteraction === 'jeep') {
+                enterJeep();
+            }
+        }
+        function doPlantFlag() {
+            if (!canAcceptGameInput() || isDriving || playerInsideBase) return;
+            const px = camera.position.x, pz = camera.position.z;
+            const tooClose = flags.some(f => Math.hypot(f.x - px, f.z - pz) < 3);
+            if (!tooClose) startFlagNaming(px, pz);
+        }
+
         document.addEventListener('keydown', (e) => {
-            if (!gameStarted || isPaused || isNamingFlag || cutsceneActive) return; // ignora teclas de jogo enquanto está no start/nickname/pausado/nomeando bandeira/cutscene
+            if (!canAcceptGameInput()) return; // ignora teclas de jogo enquanto está no start/nickname/pausado/nomeando bandeira/cutscene
             if(e.code === 'KeyW') moveForward = true;
             if(e.code === 'KeyA') moveLeft = true;
             if(e.code === 'KeyS') moveBackward = true;
             if(e.code === 'KeyD') moveRight = true;
-            if(e.code === 'KeyF') { flashlightOn = !flashlightOn; flashlight.visible = flashlightOn; }
-            if(e.code === 'KeyL' && isDriving) { setJeepHeadlights(!jeepHeadlightsOn); } // Ligar/desligar os faróis do jipe
-            if(e.code === 'KeyE') {
-                if (isDriving) {
-                    exitJeep();
-                } else if (currentInteraction === 'door') { // Abrir/Fechar porta da base!
-                    isDoorOpen = !isDoorOpen;
-                    doorTargetY = isDoorOpen ? doorOpenY : doorClosedY; // Sobe para liberar a passagem
-                    playDoorSound(isDoorOpen);
-                } else if (currentInteraction === 'bed') {
-                    if (isNightNow) sleepUntilMorning();
-                } else if (currentInteraction === 'jeep') {
-                    enterJeep();
-                }
-            }
-            if(e.code === 'KeyG' && !isDriving && !playerInsideBase) { // Plantar bandeira
-                const px = camera.position.x, pz = camera.position.z;
-                const tooClose = flags.some(f => Math.hypot(f.x - px, f.z - pz) < 3);
-                if (!tooClose) startFlagNaming(px, pz);
-            }
+            if(e.code === 'KeyF') doToggleFlashlight();
+            if(e.code === 'KeyL') doToggleHeadlights();
+            if(e.code === 'KeyE') doInteract();
+            if(e.code === 'KeyG') doPlantFlag();
         });
         document.addEventListener('keyup', (e) => {
             if(e.code === 'KeyW') moveForward = false;
@@ -1873,6 +1924,126 @@
             if(e.code === 'KeyS') moveBackward = false;
             if(e.code === 'KeyD') moveRight = false;
         });
+
+        // --- CONTROLES VIRTUAIS (CELULAR): joystick de movimento, arraste pra olhar e botões de ação ---
+        const mobileControlsEl = document.getElementById('mobileControls');
+        function updateMobileControlsVisibility() {
+            if (!isMobile) return;
+            document.body.classList.toggle('game-active', canAcceptGameInput());
+        }
+
+        if (isMobile) {
+            // Joystick virtual (esquerda): controla moveForward/Backward/Left/Right por limiar (digital),
+            // igual ao teclado — assim reaproveita 100% da física de movimento já existente.
+            const joyZone = document.getElementById('joystickZone');
+            const joyStick = document.getElementById('joystickStick');
+            const JOY_RADIUS = 40, JOY_DEADZONE = 12;
+            let joyPointerId = null, joyCenterX = 0, joyCenterY = 0;
+
+            function joyApply(clientX, clientY) {
+                let dx = clientX - joyCenterX, dy = clientY - joyCenterY;
+                const dist = Math.hypot(dx, dy);
+                if (dist > JOY_RADIUS) { dx = dx / dist * JOY_RADIUS; dy = dy / dist * JOY_RADIUS; }
+                joyStick.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px)`;
+                moveForward = dy < -JOY_DEADZONE;
+                moveBackward = dy > JOY_DEADZONE;
+                moveLeft = dx < -JOY_DEADZONE;
+                moveRight = dx > JOY_DEADZONE;
+            }
+            function joyReset() {
+                joyStick.style.transform = 'translate(-50%, -50%)';
+                moveForward = moveBackward = moveLeft = moveRight = false;
+            }
+            joyZone.addEventListener('pointerdown', (e) => {
+                if (!canAcceptGameInput() || joyPointerId !== null) return;
+                const rect = joyZone.getBoundingClientRect();
+                joyCenterX = rect.left + rect.width / 2;
+                joyCenterY = rect.top + rect.height / 2;
+                joyPointerId = e.pointerId;
+                joyZone.setPointerCapture(e.pointerId);
+                joyApply(e.clientX, e.clientY);
+            });
+            joyZone.addEventListener('pointermove', (e) => {
+                if (e.pointerId !== joyPointerId) return;
+                joyApply(e.clientX, e.clientY);
+            });
+            function joyRelease(e) {
+                if (e.pointerId !== joyPointerId) return;
+                joyPointerId = null;
+                joyReset();
+            }
+            joyZone.addEventListener('pointerup', joyRelease);
+            joyZone.addEventListener('pointercancel', joyRelease);
+
+            // Área de "olhar": arrastar o dedo em qualquer lugar da tela gira a câmera. O PointerLockControls
+            // de verdade só responde a mousemove enquanto o Pointer Lock real está ativo (não é o caso no
+            // toque), então giramos a câmera manualmente aqui, replicando a mesma ordem de eixos (YXZ) e
+            // aplicando a mesma sensibilidade (mouseSensitivity) usada no slider de configurações.
+            const lookZone = document.getElementById('lookZone');
+            const mobileLookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+            let lookPointerId = null, lookLastX = 0, lookLastY = 0;
+            function applyMobileLook(dx, dy) {
+                mobileLookEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+                mobileLookEuler.y -= dx * 0.0024 * mouseSensitivity;
+                mobileLookEuler.x -= dy * 0.0024 * mouseSensitivity;
+                mobileLookEuler.x = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, mobileLookEuler.x));
+                mobileLookEuler.z = 0;
+                camera.quaternion.setFromEuler(mobileLookEuler);
+            }
+            lookZone.addEventListener('pointerdown', (e) => {
+                if (!canAcceptGameInput() || lookPointerId !== null) return;
+                lookPointerId = e.pointerId;
+                lookLastX = e.clientX; lookLastY = e.clientY;
+                lookZone.setPointerCapture(e.pointerId);
+            });
+            lookZone.addEventListener('pointermove', (e) => {
+                if (e.pointerId !== lookPointerId) return;
+                const dx = e.clientX - lookLastX, dy = e.clientY - lookLastY;
+                lookLastX = e.clientX; lookLastY = e.clientY;
+                applyMobileLook(dx, dy);
+            });
+            function lookRelease(e) { if (e.pointerId === lookPointerId) lookPointerId = null; }
+            lookZone.addEventListener('pointerup', lookRelease);
+            lookZone.addEventListener('pointercancel', lookRelease);
+
+            // Botões de ação: mesmas funções compartilhadas com o teclado.
+            function bindMobileButton(id, action) {
+                const btn = document.getElementById(id);
+                btn.addEventListener('pointerdown', (e) => { e.preventDefault(); action(); });
+            }
+            bindMobileButton('btnInteract', doInteract);
+            bindMobileButton('btnFlashlight', doToggleFlashlight);
+            bindMobileButton('btnHeadlights', doToggleHeadlights);
+            bindMobileButton('btnFlag', doPlantFlag);
+            document.getElementById('btnMobilePause').addEventListener('pointerdown', (e) => { e.preventDefault(); doPauseOrSkip(); });
+
+            // Ao voltar da pausa / trocar de tela, o toque pode "ficar preso" — solta tudo por garantia.
+            document.addEventListener('visibilitychange', () => { joyPointerId = null; lookPointerId = null; joyReset(); });
+
+            // Não existe tecla ESC física no celular: deixa tocar na tela pra pular a cutscene de abertura.
+            const cutsceneSkipHintEl = document.getElementById('cutsceneSkipHint');
+            if (cutsceneSkipHintEl) cutsceneSkipHintEl.textContent = 'Toque na tela para pular a transmissão';
+            cutsceneEl.style.pointerEvents = 'auto';
+            cutsceneEl.addEventListener('pointerdown', () => { if (cutsceneActive) skipCutscene(); });
+
+            // Ajusta as dicas de texto que mencionam teclado (ESC, WASD) pra fazerem sentido no celular.
+            const flagNameHintEl = document.getElementById('flagNameHint');
+            if (flagNameHintEl) flagNameHintEl.textContent = 'Toque fora ou use o botão ⏸ para cancelar';
+            const controlsPanelEl = document.querySelector('.controlsPanel');
+            if (controlsPanelEl) {
+                controlsPanelEl.innerHTML = `
+                    <span class="controlHint">🕹️ Joystick — Andar</span>
+                    <span class="controlHint">👆 Arraste a tela — Olhar</span>
+                    <span class="controlHint">🔦 Botão — Lanterna</span>
+                    <span class="controlHint">E — Interagir</span>
+                    <span class="controlHint">🚩 Botão — Bandeira</span>
+                    <span class="controlHint">💡 Botão — Faróis do jipe</span>
+                    <span class="controlHint">⏸ Botão — Menu</span>
+                `;
+            }
+            const creditsControlsP = document.querySelector('#creditsBox p:last-of-type');
+            if (creditsControlsP) creditsControlsP.textContent = 'Joystick para andar  |  Arraste a tela para olhar  |  Botões para lanterna, bandeira, faróis e interagir';
+        }
 
         // 7. ILUMINAÇÃO
         const ambientLight = new THREE.AmbientLight(0xbf5b34, 0.35); scene.add(ambientLight);
@@ -2182,7 +2353,7 @@
             jeepCollision.rSq = isDriving ? 0 : jeepParkedRSq;
 
             // SISTEMA DE MOVIMENTO + COLISÃO QUE PERMITE "DESLIZAR"
-            if (controls.isLocked === true && !cutsceneActive) {
+            if (isControlsLocked() && !cutsceneActive) {
                 if (isDriving) {
                     // --- Dirigindo o jipe ---
                     updateJeepDriving(delta);
@@ -2352,5 +2523,9 @@
             renderer.render(scene, camera);
         }
 
-        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+        function handleViewportResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
+        window.addEventListener('resize', handleViewportResize);
+        // Em celulares, orientationchange dispara antes do navegador atualizar innerWidth/innerHeight
+        // corretamente — um pequeno atraso garante que o resize pegue as dimensões já rotacionadas.
+        window.addEventListener('orientationchange', () => setTimeout(handleViewportResize, 300));
         animate();

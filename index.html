@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Pixel Saga - Exploração em Marte</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -110,6 +110,32 @@
             <input type="text" id="nicknameInput" maxlength="18" placeholder="Ex: Astro_Marcos" autocomplete="off">
             <button id="nicknameOk">OK</button>
         </div>
+    </div>
+
+    <!-- Aviso pedindo pra girar o celular: só aparece em telas de toque em modo retrato -->
+    <div id="orientationOverlay">
+        <div id="orientationBox">
+            <div class="rotateIcon">📱</div>
+            <p>Gire o seu celular para jogar na horizontal</p>
+        </div>
+    </div>
+
+    <!-- Controles virtuais para celular (joystick + olhar por arraste + botões de ação) -->
+    <div id="mobileControls">
+        <div id="lookZone"></div>
+
+        <div id="joystickZone">
+            <div id="joystickBase"><div id="joystickStick"></div></div>
+        </div>
+
+        <div id="mobileActionButtons">
+            <button id="btnFlag" class="mobileBtn mobileBtnSmall" title="Plantar bandeira">🚩</button>
+            <button id="btnHeadlights" class="mobileBtn mobileBtnSmall" title="Faróis do jipe">💡</button>
+            <button id="btnFlashlight" class="mobileBtn mobileBtnSmall" title="Lanterna">🔦</button>
+            <button id="btnInteract" class="mobileBtn mobileBtnBig" title="Interagir">E</button>
+        </div>
+
+        <button id="btnMobilePause" title="Pausar">⏸</button>
     </div>
 
     <script type="importmap">
