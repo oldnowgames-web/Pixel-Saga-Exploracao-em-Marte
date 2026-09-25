@@ -50,6 +50,10 @@
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
+        // Detecção de celular feita bem cedo: usada tanto pra configurar o renderer/gerar menos
+        // objetos (performance) quanto mais abaixo pelos controles de toque (joystick, botões etc.).
+        const isMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
         // 1. CONFIGURAÇÃO BÁSICA
         const scene = new THREE.Scene();
         const daySkyColor = new THREE.Color(0xa3441f);      
@@ -62,10 +66,124 @@
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1200);
         camera.position.set(0, 2, 0);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true });
+        // ================= PERFIL DE QUALIDADE (Baixo / Médio / Alto) =================
+        // Celular começa em "Baixo", PC com placa de vídeo integrada/fraca em "Médio" e o resto em "Alto".
+        // O jogador pode trocar no menu de pausa (o jogo reinicia pra aplicar). A resolução ainda se ajusta
+        // sozinha durante o jogo (ver updateAdaptiveResolution) se o FPS cair.
+        const QUALITY_KEY = 'pixelSaga.quality';
+        const QUALITY_PRESETS = {
+            low: {
+                label: 'Baixo', antialias: false, logDepth: false, maxPixelRatio: 1, minPixelRatio: 0.55,
+                shadows: false, softShadows: false, flashlightShadow: false,
+                interiorLights: 1, extraLights: false, headlightLights: 1, lambert: true, bump: false,
+                pebbles: 30000, rocks: 700, boulders: 70, dust: 800,
+                pebbleDist: 60, rockDist: 220, auroras: 1, minimapFps: 10
+            },
+            medium: {
+                label: 'Médio', antialias: false, logDepth: false, maxPixelRatio: 1, minPixelRatio: 0.6,
+                shadows: true, softShadows: false, flashlightShadow: false,
+                interiorLights: 3, extraLights: true, headlightLights: 2, lambert: false, bump: false,
+                pebbles: 60000, rocks: 2500, boulders: 180, dust: 1500,
+                pebbleDist: 85, rockDist: 260, auroras: 2, minimapFps: 20
+            },
+            high: {
+                label: 'Alto', antialias: true, logDepth: true, maxPixelRatio: 1.5, minPixelRatio: 0.75,
+                shadows: true, softShadows: true, flashlightShadow: true,
+                interiorLights: 5, extraLights: true, headlightLights: 2, lambert: false, bump: true,
+                pebbles: 90000, rocks: 4000, boulders: 260, dust: 2400,
+                pebbleDist: 110, rockDist: 320, auroras: 3, minimapFps: 30
+            }
+        };
+        function pickDefaultQuality() {
+            if (isMobile) return 'low';
+            // IMPORTANTE: NÃO chamar loseContext() no contexto de teste abaixo. Em algumas combinações de
+            // driver (ex: Chrome + Intel no Windows) isso tem um bug conhecido que faz o PRÓXIMO contexto
+            // WebGL criado (o do próprio jogo, logo em seguida) nascer "perdido" — tela em branco do jogo
+            // inteiro, mascarada durante a cutscene pelas barras pretas (que são HTML/CSS, não WebGL) e só
+            // fica visível quando a cutscene termina e elas somem. O navegador libera esse contexto de teste
+            // sozinho (garbage collector) assim que a função termina, sem precisar forçar a perda dele.
+            try {
+                const c = document.createElement('canvas');
+                const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+                if (!gl) return 'low';
+                const ext = gl.getExtension('WEBGL_debug_renderer_info');
+                const gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+                if (/swiftshader|llvmpipe|softpipe|microsoft basic|mali|adreno|powervr/i.test(gpu)) return 'low';
+                if (/intel|uhd|iris|hd graphics|radeon\(tm\) graphics|vega \d+ graphics/i.test(gpu)) return 'medium';
+            } catch (err) { /* segue com o padrão */ }
+            if ((navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4) return 'medium';
+            return 'high';
+        }
+        let qualityKey = null;
+        try { qualityKey = localStorage.getItem(QUALITY_KEY); } catch (err) { /* modo privado etc. */ }
+        if (!QUALITY_PRESETS[qualityKey]) qualityKey = pickDefaultQuality();
+        const Q = QUALITY_PRESETS[qualityKey];
+
+        const renderer = new THREE.WebGLRenderer({
+            antialias: Q.antialias,          // MSAA custa caro em GPU fraca/celular
+            alpha: false, stencil: false,    // a cena já tem fundo opaco e não usa stencil: menos memória e sem blend com a página
+            powerPreference: "high-performance",
+            logarithmicDepthBuffer: Q.logDepth, // tem custo por pixel (desliga o early-z); só no perfil Alto
+        });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // Aviso visível + tentativa de recuperação caso o contexto WebGL do jogo se perca em algum momento
+        // (troca de GPU, driver travou, aba ficou muito tempo em segundo plano em celular fraco etc.) — sem
+        // isso, o sintoma pra quem está jogando é só "a tela ficou preta/parada do nada", sem nenhuma pista.
+        renderer.domElement.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            console.error('Contexto WebGL perdido.');
+            let notice = document.getElementById('webglLostNotice');
+            if (!notice) {
+                notice = document.createElement('div');
+                notice.id = 'webglLostNotice';
+                notice.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(5,6,10,0.92);color:#fdd;font:16px Arial,sans-serif;text-align:center;padding:24px;';
+                notice.innerHTML = 'A GPU perdeu o contexto gráfico.<br><button id="webglReloadBtn" style="margin-top:14px;padding:10px 24px;font-size:15px;cursor:pointer;">Recarregar</button>';
+                document.body.appendChild(notice);
+                document.getElementById('webglReloadBtn').addEventListener('click', () => location.reload());
+            }
+        });
+        renderer.domElement.addEventListener('webglcontextrestored', () => location.reload());
+        // Resolução de desenho: começa no máximo do perfil e desce sozinha se o FPS ficar baixo (e volta a subir
+        // com calma quando sobra folga). Em tela retina/celular o devicePixelRatio pode ser 2~3 (4~9x mais pixels).
+        const pixelRatioMax = Math.min(window.devicePixelRatio || 1, Q.maxPixelRatio);
+        const pixelRatioMin = Math.min(Q.minPixelRatio, pixelRatioMax);
+        let pixelRatioNow = pixelRatioMax;
+        renderer.setPixelRatio(pixelRatioNow);
+        renderer.shadowMap.enabled = Q.shadows; // sombras dinâmicas são a parte mais pesada pra GPU fraca
+        renderer.shadowMap.type = Q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+
+        let fpsDebugEl = null;
+        let adaptAcc = 0, adaptFrames = 0, adaptUpLock = 6, adaptGoodWindows = 0, adaptBadWindows = 0;
+        function updateAdaptiveResolution(dt) {
+            if (dt <= 0 || dt > 0.25) return; // engasgo isolado (troca de aba, compilação de shader): não conta
+            adaptAcc += dt; adaptFrames++;
+            if (adaptAcc < 1.5) return;
+            const fps = adaptFrames / adaptAcc;
+            adaptAcc = 0; adaptFrames = 0;
+            adaptUpLock = Math.max(0, adaptUpLock - 1.5);
+            if (fpsDebugEl) fpsDebugEl.textContent = `${Math.round(fps)} FPS · ${Q.label} · res ${pixelRatioNow.toFixed(2)}x`;
+            if (fps < 42 && pixelRatioNow > pixelRatioMin + 0.01) {
+                adaptGoodWindows = 0;
+                if (++adaptBadWindows >= 2) { // só reduz depois de 2 medições ruins seguidas
+                    pixelRatioNow = Math.max(pixelRatioMin, pixelRatioNow - (fps < 28 ? 0.2 : 0.1));
+                    renderer.setPixelRatio(pixelRatioNow);
+                    adaptUpLock = 25; adaptBadWindows = 0;
+                }
+            } else if (fps > 56 && pixelRatioNow < pixelRatioMax - 0.01 && adaptUpLock <= 0) {
+                adaptBadWindows = 0;
+                if (++adaptGoodWindows >= 3) {
+                    pixelRatioNow = Math.min(pixelRatioMax, pixelRatioNow + 0.1);
+                    renderer.setPixelRatio(pixelRatioNow);
+                    adaptUpLock = 25; adaptGoodWindows = 0;
+                }
+            } else { adaptGoodWindows = 0; adaptBadWindows = 0; }
+        }
+        // Contador de FPS opcional: abra o jogo com "?fps" no final do endereço.
+        if (/[?&]fps\b/.test(location.search)) {
+            fpsDebugEl = document.createElement('div');
+            fpsDebugEl.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9999;padding:3px 8px;background:rgba(0,0,0,0.6);color:#8f8;font:12px monospace;pointer-events:none;border-radius:4px;';
+            document.body.appendChild(fpsDebugEl);
+        }
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         document.body.appendChild(renderer.domElement);
         scene.add(camera);
@@ -427,6 +545,17 @@
         const terrainSegments = 250;
         const terrainCell = worldSize / terrainSegments;
         const terrainHalf = worldSize / 2;
+        // Mapa de alturas pré-calculado nos vértices da malha. Antes, getSurfaceHeight() chamava
+        // getTerrainHeight() 4 vezes (senos, cossenos, pow, raízes das crateras...) POR PARTÍCULA DE POEIRA
+        // A CADA FRAME (~10 mil cálculos por quadro) — era o maior gargalo de CPU, principalmente no celular.
+        // Agora o terreno é calculado uma vez só e a consulta vira uma leitura de array.
+        const terrainStride = terrainSegments + 1;
+        const terrainHeightGrid = new Float32Array(terrainStride * terrainStride);
+        for (let gzi = 0; gzi < terrainStride; gzi++) {
+            for (let gxi = 0; gxi < terrainStride; gxi++) {
+                terrainHeightGrid[gzi * terrainStride + gxi] = getTerrainHeight(gxi * terrainCell - terrainHalf, gzi * terrainCell - terrainHalf);
+            }
+        }
         function getSurfaceHeight(x, z) {
             let gx = (x + terrainHalf) / terrainCell;
             let gz = (z + terrainHalf) / terrainCell;
@@ -435,10 +564,9 @@
             const ix = Math.floor(gx), iz = Math.floor(gz);
             const ix1 = Math.min(ix + 1, terrainSegments), iz1 = Math.min(iz + 1, terrainSegments);
             const fx = gx - ix, fz = gz - iz;
-            const x0 = ix * terrainCell - terrainHalf, x1 = ix1 * terrainCell - terrainHalf;
-            const z0 = iz * terrainCell - terrainHalf, z1 = iz1 * terrainCell - terrainHalf;
-            const h00 = getTerrainHeight(x0, z0), h10 = getTerrainHeight(x1, z0);
-            const h01 = getTerrainHeight(x0, z1), h11 = getTerrainHeight(x1, z1);
+            const row0 = iz * terrainStride, row1 = iz1 * terrainStride;
+            const h00 = terrainHeightGrid[row0 + ix], h10 = terrainHeightGrid[row0 + ix1];
+            const h01 = terrainHeightGrid[row1 + ix], h11 = terrainHeightGrid[row1 + ix1];
             const h0 = THREE.MathUtils.lerp(h00, h10, fx), h1 = THREE.MathUtils.lerp(h01, h11, fx);
             return THREE.MathUtils.lerp(h0, h1, fz);
         }
@@ -446,9 +574,20 @@
         const terrainGeo = new THREE.PlaneGeometry(worldSize, worldSize, terrainSegments, terrainSegments); 
         terrainGeo.rotateX(-Math.PI / 2);
         const positions = terrainGeo.attributes.position;
-        for (let i = 0; i < positions.count; i++) positions.setY(i, getTerrainHeight(positions.getX(i), positions.getZ(i)));
+        for (let i = 0; i < positions.count; i++) {
+            // reaproveita o mapa de alturas (mesmos pontos da malha) em vez de recalcular o terreno de novo
+            const gxi = Math.round((positions.getX(i) + terrainHalf) / terrainCell);
+            const gzi = Math.round((positions.getZ(i) + terrainHalf) / terrainCell);
+            positions.setY(i, terrainHeightGrid[gzi * terrainStride + gxi]);
+        }
         terrainGeo.computeVertexNormals();
-        const terrainMat = new THREE.MeshStandardMaterial({ map: marsTexture, bumpMap: marsTexture, bumpScale: 0.18, roughness: 1.0 });
+        // O terreno cobre a tela inteira, então é o material mais caro do jogo (cada pixel calcula todas as luzes).
+        // Baixo: Lambert (bem mais leve, visual quase igual em solo fosco). Médio: Standard sem bump. Alto: completo.
+        const terrainMat = Q.lambert
+            ? new THREE.MeshLambertMaterial({ map: marsTexture })
+            : new THREE.MeshStandardMaterial(Q.bump
+                ? { map: marsTexture, bumpMap: marsTexture, bumpScale: 0.18, roughness: 1.0 }
+                : { map: marsTexture, roughness: 1.0 });
         const terrain = new THREE.Mesh(terrainGeo, terrainMat);
         terrain.receiveShadow = true; scene.add(terrain);
 
@@ -510,24 +649,30 @@
         const interiorLamp = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 0.2, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
         interiorLamp.position.set(0, habHeight + 0.8, 0);
         habGroup.add(interiorLamp);
-        const interiorLight = new THREE.PointLight(0xffeedd, 5, 40); // Luz suave e quente
+        // Cada luz de ponto é calculada em TODO pixel de TODO material da cena, então nos perfis Baixo/Médio
+        // usamos menos luzes na base e compensamos deixando a central mais forte.
+        const interiorLight = new THREE.PointLight(0xffeedd, Q.interiorLights >= 5 ? 5 : (Q.interiorLights >= 3 ? 6.5 : 8.5), 40); // Luz suave e quente
         interiorLight.position.set(0, habHeight - 1, 0);
         habGroup.add(interiorLight);
         // Luzes extras nas laterais para não deixar cantos escuros num espaço maior — mais perto das
         // paredes (0.72 do raio, não 0.5) pra iluminar bem o piso até a borda, senão aquele anel
         // ficava escuro demais e sobrava só a cor acastanhada da luz ambiente, parecendo terra por baixo.
-        const interiorLight2 = new THREE.PointLight(0xffeedd, 2.8, 36);
-        interiorLight2.position.set(habRadius * 0.72, habHeight - 2, habRadius * 0.72);
-        habGroup.add(interiorLight2);
-        const interiorLight3 = new THREE.PointLight(0xffeedd, 2.8, 36);
-        interiorLight3.position.set(-habRadius * 0.72, habHeight - 2, -habRadius * 0.72);
-        habGroup.add(interiorLight3);
-        const interiorLight4 = new THREE.PointLight(0xffeedd, 2.8, 36);
-        interiorLight4.position.set(habRadius * 0.72, habHeight - 2, -habRadius * 0.72);
-        habGroup.add(interiorLight4);
-        const interiorLight5 = new THREE.PointLight(0xffeedd, 2.8, 36);
-        interiorLight5.position.set(-habRadius * 0.72, habHeight - 2, habRadius * 0.72);
-        habGroup.add(interiorLight5);
+        if (Q.interiorLights >= 3) {
+            const interiorLight2 = new THREE.PointLight(0xffeedd, 2.8, 36);
+            interiorLight2.position.set(habRadius * 0.72, habHeight - 2, habRadius * 0.72);
+            habGroup.add(interiorLight2);
+            const interiorLight3 = new THREE.PointLight(0xffeedd, 2.8, 36);
+            interiorLight3.position.set(-habRadius * 0.72, habHeight - 2, -habRadius * 0.72);
+            habGroup.add(interiorLight3);
+        }
+        if (Q.interiorLights >= 5) {
+            const interiorLight4 = new THREE.PointLight(0xffeedd, 2.8, 36);
+            interiorLight4.position.set(habRadius * 0.72, habHeight - 2, -habRadius * 0.72);
+            habGroup.add(interiorLight4);
+            const interiorLight5 = new THREE.PointLight(0xffeedd, 2.8, 36);
+            interiorLight5.position.set(-habRadius * 0.72, habHeight - 2, habRadius * 0.72);
+            habGroup.add(interiorLight5);
+        }
         // Luz ambiente fixa só da base, pra ela nunca ficar escura mesmo quando é noite lá fora.
         // Cor do "chão" trocada de marrom (0x554433) pra cinza neutro: era essa tonalidade marrom
         // que aparecia no piso de metal perto das paredes, nas áreas com menos luz direta,
@@ -614,6 +759,19 @@
             height: platHeight
         };
 
+        // Altura do "chão" (nível dos pés) em qualquer ponto (x,z) — dentro da base é plano/plataforma,
+        // fora é o terreno natural. Usada tanto pelo loop de caminhada quanto para posicionar a câmera
+        // com segurança sempre que ela é "teleportada" (fim/skip da cutscene, entrar/sair do jipe etc.),
+        // pra nunca deixar o jogador nascer enfiado dentro do chão.
+        function getGroundY(x, z) {
+            const isInsideBase = Math.hypot(x - 0, z - (-30)) < (habRadius - 0.2);
+            if (!isInsideBase) return getTerrainHeight(x, z);
+            const localX = x - habGroup.position.x, localZ = z - habGroup.position.z;
+            const onPlatform = localX > platformBounds.minX && localX < platformBounds.maxX &&
+                localZ > platformBounds.minZ && localZ < platformBounds.maxZ;
+            return habGroup.position.y + (onPlatform ? platformBounds.height : 0.2);
+        }
+
         // --- ACESSÓRIOS DE CIÊNCIA / ENGENHARIA ---
         const gasTankMat = new THREE.MeshStandardMaterial({ color: 0x1f8a5a, roughness: 0.35, metalness: 0.7 });
         const gasTankMat2 = new THREE.MeshStandardMaterial({ color: 0xb0b8bd, roughness: 0.3, metalness: 0.8 });
@@ -684,9 +842,11 @@
         printHead.position.set(0, printerBaseY + 0.1, 0);
         printerGroup.add(printHead);
 
-        const printerLight = new THREE.PointLight(0x88ddff, 0.8, 4);
-        printerLight.position.set(0, printerBaseY + 0.6, 0);
-        printerGroup.add(printerLight);
+        if (Q.extraLights) {
+            const printerLight = new THREE.PointLight(0x88ddff, 0.8, 4);
+            printerLight.position.set(0, printerBaseY + 0.6, 0);
+            printerGroup.add(printerLight);
+        }
         habGroup.add(printerGroup);
         {
             const wx = habGroup.position.x + printerGroup.position.x;
@@ -746,9 +906,11 @@
         const readingLamp = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), lampMat);
         readingLamp.position.set(0, 1.5, -0.95);
         bedGroup.add(readingLamp);
-        const readingLight = new THREE.PointLight(0xffdca0, 0.6, 5);
-        readingLight.position.set(0, 1.5, -0.9);
-        bedGroup.add(readingLight);
+        if (Q.extraLights) {
+            const readingLight = new THREE.PointLight(0xffdca0, 0.6, 5);
+            readingLight.position.set(0, 1.5, -0.9);
+            bedGroup.add(readingLight);
+        }
         habGroup.add(bedGroup);
         const bedWorldX = habGroup.position.x + bedLocalX;
         const bedWorldZ = habGroup.position.z + bedLocalZ;
@@ -867,17 +1029,22 @@
             jeepGroup.add(lens);
             jeepHeadlightMeshes.push(lens);
 
-            const light = new THREE.SpotLight(0xfff3d0, 0, 40, Math.PI / 5, 0.5, 1.4); // começa apagado (intensity 0)
-            light.position.set(hx, 1.0, -2.0);
-            const target = new THREE.Object3D(); target.position.set(hx * 0.6, 0.3, -10);
-            jeepGroup.add(target); light.target = target;
-            jeepGroup.add(light);
-            jeepHeadlightLights.push(light);
+            // Perfil Baixo: só um refletor central (as duas lentes continuam acendendo). Um SpotLight a menos
+            // em todos os pixels da cena, mesmo com intensidade 0.
+            if (Q.headlightLights >= 2 || hx > 0) {
+                const two = Q.headlightLights >= 2;
+                const light = new THREE.SpotLight(0xfff3d0, 0, 40, two ? Math.PI / 5 : Math.PI / 4, 0.5, 1.4); // começa apagado (intensity 0)
+                light.position.set(two ? hx : 0, 1.0, -2.0);
+                const target = new THREE.Object3D(); target.position.set(two ? hx * 0.6 : 0, 0.3, -10);
+                jeepGroup.add(target); light.target = target;
+                jeepGroup.add(light);
+                jeepHeadlightLights.push(light);
+            }
         });
         let jeepHeadlightsOn = false;
         function setJeepHeadlights(on) {
             jeepHeadlightsOn = on;
-            jeepHeadlightLights.forEach(l => l.intensity = on ? 5 : 0);
+            jeepHeadlightLights.forEach(l => l.intensity = on ? (Q.headlightLights >= 2 ? 5 : 8) : 0);
             jeepHeadlightMeshes.forEach(m => m.material.emissiveIntensity = on ? 2.2 : 0.05);
         }
 
@@ -1512,7 +1679,6 @@
         // do controle com uma flag própria e giramos a câmera manualmente a partir do toque
         // (ver applyMobileLook mais abaixo). requestLock/requestUnlock/isControlsLocked substituem
         // TODAS as chamadas diretas a controls.lock()/unlock()/isLocked no resto do arquivo.
-        const isMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
         if (isMobile) document.body.classList.add('is-mobile');
         let virtualLocked = false;
         function isControlsLocked() { return isMobile ? virtualLocked : controls.isLocked; }
@@ -1572,7 +1738,8 @@
         function onControlsUnlocked() {
             interactPromptEl.classList.remove('visible');
             updateMobileControlsVisibility();
-            // Durante a cutscene de abertura o jogo não deve pausar (ela roda sem o pointer lock preso)
+            // Durante a cutscene de abertura o jogo não deve pausar (ela roda sem o pointer lock preso,
+            // e o ESC não tem mais nenhum efeito nela — não dá pra pular)
             if (cutsceneActive) return;
             // Não abre o menu de pausa se o motivo foi abrir a tela de nomear bandeira
             if (isNamingFlag) return;
@@ -1622,6 +1789,19 @@
             setSoundEnabled(!soundEnabled);
             menuSoundBtn.textContent = soundEnabled ? '🔊 Som: Ligado' : '🔇 Som: Desligado';
         });
+        // Botão de gráficos: cicla Baixo → Médio → Alto. Antialias, luzes e quantidade de objetos são definidos
+        // na criação da cena, então o jogo reinicia pra aplicar (a escolha fica salva no navegador).
+        const menuQualityBtn = document.getElementById('menuQuality');
+        if (menuQualityBtn) {
+            const qualityOrder = ['low', 'medium', 'high'];
+            menuQualityBtn.textContent = '🎨 Gráficos: ' + Q.label;
+            menuQualityBtn.addEventListener('click', () => {
+                const next = qualityOrder[(qualityOrder.indexOf(qualityKey) + 1) % qualityOrder.length];
+                if (!window.confirm(`Mudar os gráficos para "${QUALITY_PRESETS[next].label}"? O jogo será reiniciado.`)) return;
+                try { localStorage.setItem(QUALITY_KEY, next); } catch (err) { /* sem storage: só não lembra */ }
+                location.reload();
+            });
+        }
         menuRestartBtn.addEventListener('click', () => location.reload());
         menuQuitBtn.addEventListener('click', () => location.reload());
 
@@ -1776,12 +1956,13 @@
                 caption: 'Sua missão é explorar a superfície, monitorar os sistemas da base e expandir a presença humana na Terra Vermelha. As transmissões estão ativas. Boa sorte, Astronauta.',
                 duration: 7000,
                 shot(t) {
-                    // Termina EXATAMENTE no ponto e olhar em que o jogo normalmente começa (0, 2, 0
-                    // olhando pra -Z), então a transição pra primeira pessoa fica perfeitamente costurada.
+                    // Termina EXATAMENTE no ponto e olhar em que o jogo normalmente começa, olhando
+                    // reto pra frente (não pra baixo) — por isso pos e look usam a MESMA altura do chão.
+                    const spawnEyeY = getGroundY(0, 0) + 1.75;
                     const startPos = new THREE.Vector3(12, 17, 22);
-                    const endPos = new THREE.Vector3(0, 2, 0);
+                    const endPos = new THREE.Vector3(0, spawnEyeY, 0);
                     const startLook = new THREE.Vector3(doorWorldX, habGroup.position.y + 3, doorWorldZ);
-                    const endLook = new THREE.Vector3(0, 2, -10);
+                    const endLook = new THREE.Vector3(0, spawnEyeY, -10);
                     return { pos: startPos.lerp(endPos, t), look: startLook.lerp(endLook, t) };
                 }
             }
@@ -1804,6 +1985,17 @@
             cutsceneEl.classList.add('active');
         }
 
+        // Se o Pointer Lock foi perdido (ex: ESC, inatividade) e o jogo devia estar rodando, tenta
+        // travar de novo sozinho, sem mostrar nenhuma tela por cima. Chamado tanto no fim da cutscene
+        // quanto (como rede de segurança) na primeira tecla/clique do jogador depois disso — porque o
+        // navegador só aceita re-travar o mouse como resposta direta a um gesto do próprio jogador.
+        function tryReclaimPointerLock() {
+            if (isMobile || !gameStarted || isPaused || isNamingFlag || cutsceneActive || controls.isLocked) return;
+            try { controls.lock(); } catch (err) { /* precisa de um gesto do jogador; a rede de segurança abaixo cobre isso */ }
+        }
+        window.addEventListener('keydown', tryReclaimPointerLock);
+        window.addEventListener('pointerdown', tryReclaimPointerLock);
+
         // Encerra a cutscene (tanto no fim natural quanto ao pular) e libera o jogo normalmente.
         function endCutscene() {
             cutsceneActive = false;
@@ -1814,17 +2006,10 @@
             coordHud.style.display = 'block';
             minimap.style.display = 'block';
             updateMobileControlsVisibility();
-        }
-
-        function skipCutscene() {
-            if (!cutsceneActive) return;
-            // Não deixa a câmera "solta" no meio do voo (ex: no alto do Olimpo) — encaixa direto
-            // no enquadramento final da última cena, que é o próprio ponto de spawn do jogo.
-            const finalShot = CUTSCENE_SCENES[CUTSCENE_SCENES.length - 1].shot(1);
-            camera.position.copy(finalShot.pos);
-            cutsceneLookTmp.copy(finalShot.look);
-            camera.lookAt(cutsceneLookTmp);
-            endCutscene();
+            // Tenta travar o mouse de novo na hora (funciona na maioria dos navegadores, sem o jogador notar
+            // nada). Se essa tentativa falhar silenciosamente, a rede de segurança acima (tryReclaimPointerLock
+            // no primeiro clique/tecla) resolve — sem precisar mostrar nenhuma tela de "clique pra continuar".
+            tryReclaimPointerLock();
         }
 
         // Chamada a cada frame (de dentro do loop principal) enquanto cutsceneActive === true.
@@ -1857,10 +2042,11 @@
             }
         }
 
-        // Fallback: o navegador nem sempre dispara o evento de "unlock" a tempo (cooldown do Pointer Lock),
-        // então também escutamos o ESC diretamente, garantindo que o menu sempre abra.
+        // A cutscene não pode mais ser pulada (de propósito — evita o jogador acabar destravado/preso
+        // no meio do chão por causa do navegador soltando o Pointer Lock de verdade ao apertar ESC).
+        // Por isso o ESC só abre o menu de pausa depois que a cutscene já tiver terminado sozinha.
         function doPauseOrSkip() {
-            if (cutsceneActive) { skipCutscene(); return; }
+            if (cutsceneActive) return;
             if (gameStarted && !isPaused) openPauseMenu();
         }
         document.addEventListener('keydown', (e) => {
@@ -2020,12 +2206,6 @@
             // Ao voltar da pausa / trocar de tela, o toque pode "ficar preso" — solta tudo por garantia.
             document.addEventListener('visibilitychange', () => { joyPointerId = null; lookPointerId = null; joyReset(); });
 
-            // Não existe tecla ESC física no celular: deixa tocar na tela pra pular a cutscene de abertura.
-            const cutsceneSkipHintEl = document.getElementById('cutsceneSkipHint');
-            if (cutsceneSkipHintEl) cutsceneSkipHintEl.textContent = 'Toque na tela para pular a transmissão';
-            cutsceneEl.style.pointerEvents = 'auto';
-            cutsceneEl.addEventListener('pointerdown', () => { if (cutsceneActive) skipCutscene(); });
-
             // Ajusta as dicas de texto que mencionam teclado (ESC, WASD) pra fazerem sentido no celular.
             const flagNameHintEl = document.getElementById('flagNameHint');
             if (flagNameHintEl) flagNameHintEl.textContent = 'Toque fora ou use o botão ⏸ para cancelar';
@@ -2048,13 +2228,13 @@
         // 7. ILUMINAÇÃO
         const ambientLight = new THREE.AmbientLight(0xbf5b34, 0.35); scene.add(ambientLight);
         const sunLight = new THREE.DirectionalLight(0xfff5db, 1.6); 
-        sunLight.castShadow = true; sunLight.shadow.mapSize.width = 512; sunLight.shadow.mapSize.height = 512;
+        sunLight.castShadow = Q.shadows; sunLight.shadow.mapSize.width = 512; sunLight.shadow.mapSize.height = 512;
         sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 1200;
         sunLight.shadow.camera.left = -300; sunLight.shadow.camera.right = 300; sunLight.shadow.camera.top = 300; sunLight.shadow.camera.bottom = -300;
         scene.add(sunLight);
 
         const flashlight = new THREE.SpotLight(0xfffdf0, 12, 60, Math.PI / 6, 0.4, 1.2);
-        flashlight.castShadow = true; flashlight.visible = false; camera.add(flashlight);
+        flashlight.castShadow = Q.flashlightShadow; flashlight.visible = false; camera.add(flashlight);
         const flashlightTarget = new THREE.Object3D(); flashlightTarget.position.set(0, 0, -1); 
         camera.add(flashlightTarget); flashlight.target = flashlightTarget;
 
@@ -2146,50 +2326,92 @@
             scene.add(mesh);
             auroraMeshes.push(mesh);
         }
+        // Cada aurora é um plano gigante transparente com shader próprio (muito overdraw em GPU fraca).
         createAurora(-150, 240, -520, 0.4, 700, 220, 0x1fe08a, 0x7a3bd6, 1.0);
-        createAurora(250, 280, -600, -0.3, 620, 190, 0x2bd6c8, 0xc23bd6, 0.7);
-        createAurora(50, 200, -700, 0.1, 800, 170, 0x3bffb0, 0x5a5bea, 1.3);
+        if (Q.auroras >= 2) createAurora(250, 280, -600, -0.3, 620, 190, 0x2bd6c8, 0xc23bd6, 0.7);
+        if (Q.auroras >= 3) createAurora(50, 200, -700, 0.1, 800, 170, 0x3bffb0, 0x5a5bea, 1.3);
 
         scene.add(new THREE.Mesh(new THREE.DodecahedronGeometry(11, 1), new THREE.MeshBasicMaterial({color: 0xffffff})).position.set(-300, 230, -450));
         scene.add(new THREE.Mesh(new THREE.DodecahedronGeometry(5, 1), new THREE.MeshBasicMaterial({color: 0xffffff})).position.set(-265, 250, -430));
 
         // 8. ROCHAS E PEDRAS (Com colisão)
-        const rockMat = new THREE.MeshStandardMaterial({ color: groundColorHex, roughness: 1.0 });
-        const instancedPebbles = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.045, 0), rockMat, 240000); 
+        // No celular a GPU é bem mais fraca pra processar centenas de milhares de instâncias, então
+        // gera bem menos pedrinhas/pedras lá — no PC também aparamos um pouco a quantidade de seixos
+        // minúsculos (eram 240 mil; quase imperceptíveis a essa distância, mas pesados de desenhar).
+        const pebbleCount = Q.pebbles;
+        const rockCount = Q.rocks;
+        const boulderMax = Q.boulders;
+
+        const rockMat = Q.lambert
+            ? new THREE.MeshLambertMaterial({ color: groundColorHex })
+            : new THREE.MeshStandardMaterial({ color: groundColorHex, roughness: 1.0 });
         const dummy = new THREE.Object3D();
         const rockSpawnHalf = worldSize / 2 - 20; // cobre o mapa quase até a borda, não só o miolo
-        for (let i = 0; i < 240000; i++) {
-            const px = (Math.random()-0.5)*2*rockSpawnHalf, pz = (Math.random()-0.5)*2*rockSpawnHalf;
-            if (Math.hypot(px - 0, pz - (-30)) < habRadius + 1) { i--; continue; } // não nasce dentro/perto da base
-            dummy.position.set(px, getSurfaceHeight(px,pz)-0.01, pz); dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-            const s = Math.random()*0.9+0.3; dummy.scale.set(s, s*0.8, s); dummy.updateMatrix(); instancedPebbles.setMatrixAt(i, dummy.matrix);
+
+        // Pedrinhas e pedras ficam divididas em "chunks" (células de grade), cada um com o seu InstancedMesh.
+        // Antes era UM InstancedMesh com o mapa inteiro (até 90 mil pedrinhas ≈ 3 milhões de triângulos) e a
+        // GPU desenhava tudo a cada quadro, mesmo o que estava a quilômetros do jogador ou atrás dele. Agora só
+        // os chunks perto do jogador ficam visíveis e o Three.js ainda descarta os que estão fora do campo de visão.
+        const rockChunks = [];
+        function buildRockChunks(geometry, material, total, cellsPerSide, maxDist, castShadow, place) {
+            const span = rockSpawnHalf * 2;
+            const cell = span / cellsPerSide;
+            const perCell = Math.max(1, Math.round(total / (cellsPerSide * cellsPerSide)));
+            const reach = maxDist + cell * 0.71; // distância até o centro do chunk (metade da diagonal da célula)
+            for (let gz = 0; gz < cellsPerSide; gz++) {
+                for (let gx = 0; gx < cellsPerSide; gx++) {
+                    const x0 = -rockSpawnHalf + gx * cell, z0 = -rockSpawnHalf + gz * cell;
+                    const mesh = new THREE.InstancedMesh(geometry, material, perCell);
+                    let n = 0;
+                    for (let k = 0; k < perCell; k++) {
+                        const px = x0 + Math.random() * cell, pz = z0 + Math.random() * cell;
+                        if (place(px, pz)) { mesh.setMatrixAt(n, dummy.matrix); n++; }
+                    }
+                    if (n === 0) { mesh.dispose(); continue; }
+                    mesh.count = n;
+                    mesh.castShadow = castShadow; mesh.receiveShadow = castShadow;
+                    mesh.computeBoundingSphere(); // usada no descarte por campo de visão (frustum culling)
+                    scene.add(mesh);
+                    rockChunks.push({ mesh, cx: x0 + cell / 2, cz: z0 + cell / 2, reachSq: reach * reach });
+                }
+            }
         }
-        scene.add(instancedPebbles);
+        function updateRockChunkVisibility(px, pz) {
+            for (let i = 0; i < rockChunks.length; i++) {
+                const c = rockChunks[i], dx = c.cx - px, dz = c.cz - pz;
+                c.mesh.visible = dx * dx + dz * dz < c.reachSq;
+            }
+        }
+        let rockVisTimer = 0;
 
-        const instancedRocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.5, 0), rockMat, 4000); 
-        for (let i = 0; i < 4000; i++) {
-            const rx = (Math.random() - 0.5) * 2 * rockSpawnHalf; 
-            const rz = (Math.random() - 0.5) * 2 * rockSpawnHalf;
-            
+        // Pedrinhas minúsculas (não têm colisão nem sombra)
+        buildRockChunks(new THREE.DodecahedronGeometry(0.045, 0), rockMat, pebbleCount, 40, Q.pebbleDist, false, (px, pz) => {
+            if (Math.hypot(px - 0, pz - (-30)) < habRadius + 1) return false; // não nasce dentro/perto da base
+            dummy.position.set(px, getSurfaceHeight(px, pz) - 0.01, pz);
+            dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+            const s = Math.random()*0.9+0.3; dummy.scale.set(s, s*0.8, s); dummy.updateMatrix();
+            return true;
+        });
+
+        // Pedras comuns (com colisão)
+        buildRockChunks(new THREE.DodecahedronGeometry(0.5, 0), rockMat, rockCount, 20, Q.rockDist, Q.shadows, (rx, rz) => {
             // Não gera pedra DENTRO ou em cima da base
-            if (Math.hypot(rx - 0, rz - (-30)) < habRadius + 9) { i--; continue; } 
-
+            if (Math.hypot(rx - 0, rz - (-30)) < habRadius + 9) return false;
             dummy.position.set(rx, getSurfaceHeight(rx, rz) - 0.12, rz);
             dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-            const scale = Math.random() * 2.2 + 0.6; 
+            const scale = Math.random() * 2.2 + 0.6;
             dummy.scale.set(scale, scale * 0.75, scale);
-            dummy.updateMatrix(); 
-            instancedRocks.setMatrixAt(i, dummy.matrix);
-            
+            dummy.updateMatrix();
             // Adiciona pedra ao array de colisão! (Raio da rocha + Margem para o Player)
             collisionData.push({ x: rx, z: rz, rSq: Math.pow((0.5 * scale) + 0.4, 2) });
-        }
-        instancedRocks.castShadow = true; instancedRocks.receiveShadow = true; scene.add(instancedRocks);
+            return true;
+        });
+        updateRockChunkVisibility(0, 0);
 
         // Rochedos maiores — formações rochosas bem mais altas, espalhadas de forma mais rara pelo mapa
-        const instancedBoulders = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 1), rockMat, 260);
+        const instancedBoulders = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 1), rockMat, boulderMax);
         let boulderCount = 0;
-        for (let i = 0; i < 260; i++) {
+        for (let i = 0; i < boulderMax; i++) {
             const rx = (Math.random() - 0.5) * 2 * rockSpawnHalf;
             const rz = (Math.random() - 0.5) * 2 * rockSpawnHalf;
             if (Math.hypot(rx - 0, rz - (-30)) < habRadius + 20) continue; // afasta bem da base
@@ -2208,7 +2430,7 @@
 
         // Tempestade de Poeira — nuvem de partículas que sempre envolve o jogador (viaja com ele em X e Z),
         // então dá a sensação de poeira "por todo o mapa" em vez de só perto do ponto de partida.
-        const dustCount = 2400; const dustBoxR = 55;
+        const dustCount = Q.dust; const dustBoxR = 55;
         const dustPos = new Float32Array(dustCount * 3), dustSpeeds = new Float32Array(dustCount), dustHeightOffset = new Float32Array(dustCount);
         for(let i=0; i<dustCount*3; i+=3) {
             const rx = (Math.random()-0.5)*2*dustBoxR, rz = (Math.random()-0.5)*2*dustBoxR;
@@ -2233,10 +2455,14 @@
         let panelRedrawTimer = 0;
         let printProgress = 0;
         let ledBlinkTimer = 0;
+        let minimapTimer = 0;
 
         function animate() {
             requestAnimationFrame(animate);
             const time = performance.now(), delta = (time - prevTime) / 1000; prevTime = time;
+            updateAdaptiveResolution(delta);
+            rockVisTimer -= delta;
+            if (rockVisTimer <= 0) { rockVisTimer = 0.2; updateRockChunkVisibility(camera.position.x, camera.position.z); }
 
             // Cutscene de abertura: assume o controle total da câmera até acabar (ou ser pulada)
             if (cutsceneActive) updateCutscene(time);
@@ -2330,7 +2556,7 @@
                 interiorHumGain.gain.value += (targetHum - interiorHumGain.gain.value) * smooth;
             }
             const dustArr = dustParticles.geometry.attributes.position.array, px = camera.position.x, pz = camera.position.z;
-            for(let i=0; i<dustCount; i++) {
+            if (dustParticles.visible) for(let i=0; i<dustCount; i++) { // dentro da base a poeira está oculta: nem calcula
                 const idx = i*3; dustArr[idx] += dustSpeeds[i]*dustSpeedMul*delta;
                 // Checa a distância real (X e Z) até o jogador, não só o X — assim a poeira nunca "esquece"
                 // de acompanhar quando o jogador anda mais em Z do que em X, e sempre o envolve, esteja onde
@@ -2400,19 +2626,9 @@
                     const finalZ = controls.getObject().position.z;
                     
                     // Se estiver dentro da base (raio ~6), o chão é fixo e plano. Se não, acompanha as dunas.
-                    const isInsideBase = Math.hypot(finalX - 0, finalZ - (-30)) < (habRadius - 0.2);
-                    playerInsideBase = isInsideBase;
+                    playerInsideBase = Math.hypot(finalX - 0, finalZ - (-30)) < (habRadius - 0.2);
 
-                    // Se estiver em cima da plataforma-teclado, o chão sobe um pouco (ela é um pequeno palco)
-                    const localX = finalX - habGroup.position.x;
-                    const localZ = finalZ - habGroup.position.z;
-                    const onPlatform = isInsideBase &&
-                        localX > platformBounds.minX && localX < platformBounds.maxX &&
-                        localZ > platformBounds.minZ && localZ < platformBounds.maxZ;
-
-                    const groundY = isInsideBase ? (habGroup.position.y + (onPlatform ? platformBounds.height : 0.2)) : getTerrainHeight(finalX, finalZ); // local a habGroup, soma o Y da base (plato elevado)
-                    
-                    controls.getObject().position.y = groundY + 1.75;
+                    controls.getObject().position.y = getGroundY(finalX, finalZ) + 1.75;
 
                     // Interações de contexto: porta, cama ou jipe — a mais próxima dentro do alcance "ganha" a tecla [E]
                     const distToDoor = Math.hypot(finalX - doorWorldX, finalZ - doorWorldZ);
@@ -2442,7 +2658,7 @@
                     if (Math.abs(velocity.x) > 1 || Math.abs(velocity.z) > 1) {
                         walkDist += Math.sqrt(velocity.x**2 + velocity.z**2) * delta;
                         if (walkDist > 1.2) { 
-                            if (!isInsideBase) addFootprint(finalX, finalZ, camera.rotation.y);
+                            if (!playerInsideBase) addFootprint(finalX, finalZ, camera.rotation.y);
                             playStepSound(); walkDist = 0; 
                         }
                     }
@@ -2452,6 +2668,11 @@
                 flags.forEach(f => { f.cloth.rotation.y = Math.sin(time * 0.002 + f.phase) * 0.18; });
 
                 // Minimapa: funciona tanto a pé quanto dirigindo, sempre relativo à posição atual da câmera
+                // O radar é redesenhado só algumas vezes por segundo (não a cada quadro): ele mexe com canvas 2D,
+                // emojis e texto do DOM, o que pesa bastante no celular e não precisa de 60 atualizações por segundo.
+                minimapTimer -= delta;
+                if (minimapTimer <= 0) {
+                minimapTimer = 1 / Q.minimapFps;
                 const camX = camera.position.x, camZ = camera.position.z;
 
                 // Medidor de coordenadas: mesmo sistema X/Z usado pelos pontos turísticos no telão,
@@ -2477,6 +2698,7 @@
                     return { bearingDeg: THREE.MathUtils.radToDeg(Math.atan2(-dx, -dz)), dist: Math.hypot(dx, dz), name: lm.name, icon: lm.icon };
                 });
                 drawMinimap(headingDeg, baseBearingDeg, baseDist, flagMarkers, jeepBearingDeg, jeepDist, isDriving, landmarkMarkers);
+                }
             }
 
             // Atualiza o painel do supercomputador (a cada ~0.5s, ou mais rápido durante alerta pra piscar)
@@ -2528,4 +2750,15 @@
         // Em celulares, orientationchange dispara antes do navegador atualizar innerWidth/innerHeight
         // corretamente — um pequeno atraso garante que o resize pegue as dimensões já rotacionadas.
         window.addEventListener('orientationchange', () => setTimeout(handleViewportResize, 300));
+
+        // Ligar a lanterna muda o número de luzes da cena, e o Three.js recompilaria TODOS os shaders na hora do
+        // clique (travada de centenas de ms, no celular passa de 1 s). Compilamos as duas variações aqui,
+        // enquanto o jogador ainda está no menu.
+        try {
+            const flashWas = flashlight.visible;
+            flashlight.visible = true;
+            renderer.compile(scene, camera);
+            flashlight.visible = flashWas;
+        } catch (err) { console.warn('Pré-compilação de shaders ignorada:', err); }
+
         animate();
